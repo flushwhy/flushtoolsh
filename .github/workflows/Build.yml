@@ -5,6 +5,8 @@ name: Build on everything but MacOS
 on:
   push:
     branches: [ "master" ]
+  pull_request:
+    branches: '**'
 
 jobs:
   build:
