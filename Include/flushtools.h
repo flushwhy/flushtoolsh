@@ -151,4 +151,4 @@ static inline uint32_t net_read_bits(net_bit_reader_t* reader, int count) {
    return value;
 }
 
-#endif // TIMER_H
+#endif // FLUSH_TOOLS_H
