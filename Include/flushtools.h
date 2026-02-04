@@ -151,4 +151,14 @@ static inline uint32_t net_read_bits(net_bit_reader_t* reader, int count) {
    return value;
 }
 
+uint16_t compass_coord(float value, float min_val, float max_val) {
+    float normalized = (value - min_val) / (max_val - min_val);
+    return (uint16_t )(normalized * 65535.0f);
+}
+
+float decompress_coord(uint16_t value, float min_val, float max_val) {
+    float normalized = (float)value / 65535.0f;
+    return min_val + normalized * (max_val - min_val);
+}
+
 #endif // FLUSH_TOOLS_H
