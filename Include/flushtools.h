@@ -3,8 +3,26 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
 #include <time.h>
 
+
+/* --- BIT-PACKING --- */
+
+typedef struct {
+    uint8_t* buffer;
+    uint32_t current_bit;
+    uint32_t bit_capacity;
+} net_bit_writer_t;
+
+typedef struct {
+    const uint8_t* buffer;
+    uint32_t current_bit;
+} net_bit_reader_t;
+
+
+ /*--- TIMER ---*/
 
 typedef struct Timer {
     int duration;            // Duration of the timer in seconds
@@ -84,5 +102,53 @@ unsigned long long random_gen(unsigned long long min_val, unsigned long long max
     return min_val + (rand() % range);
 }
 
+/*-- QUANTIZATION ---*/
+
+static inline uint32_t net_quantize(float value, float min, float max, int bits) {
+    if (value < min) value = min;
+    if (value > max) value = max;
+
+    float normalized = (value - min) / (max - min);
+    uint32_t max_val = (1U << bits) - 1;
+    return (uint32_t)(normalized * max_val + 0.5f);
+}
+
+static inline float net_dequantize(uint32_t value, float min, float max, int bits) {
+    uint32_t max_val = (1U << bits) - 1;
+    float normalized = (float)value / (float)max_val;
+    return min + normalized * (max - min);
+}
+
+static inline void net_writer_init(net_bit_writer_t* writer, uint8_t* buf, uint32_t byte_cap) {
+    writer->buffer = buf;
+    writer->current_bit = 0;
+    writer->bit_capacity = byte_cap * 8;
+
+    // clear mem buff
+    memset(writer->buffer, 0, byte_cap);
+}
+
+static inline void net_writer_bits(net_bit_writer_t* writer, uint32_t value, int count){
+    for (int i = 0; i < count; i++) {
+        if (writer->current_bit >= writer->bit_capacity) return;
+
+        if ((value >> i) & 1) {
+            // Index: bit / 8 (shift 3), offset: bit % 8
+            writer->buffer[writer->current_bit >> 3] |= (1 << (writer->current_bit & 7));
+        }
+        writer->current_bit++;
+    }
+}
+
+static inline uint32_t net_read_bits(net_bit_reader_t* reader, int count) {
+    uint32_t value = 0;
+    for (int i = 0; i < count; ++i){
+        if ((reader->buffer[reader->current_bit >> 3] >> (reader->current_bit & 7)) & 1) {
+            value |= (1 << i);
+        }
+       reader->current_bit++;
+    }
+   return value;
+}
 
 #endif // TIMER_H
