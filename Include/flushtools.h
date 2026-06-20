@@ -214,7 +214,7 @@ static inline void net_writer_bits(net_bit_writer_t* writer, uint32_t value, int
 
         if ((value >> i) & 1) {
             // Index: bit / 8 (shift 3), offset: bit % 8
-            writer->buffer[writer->current_bit >> 3] |= (1 << (writer->current_bit & 7));
+            writer->buffer[writer->current_bit >> 3] |= (uint8_t)(1 << (writer->current_bit & 7));
         }
         writer->current_bit++;
     }
