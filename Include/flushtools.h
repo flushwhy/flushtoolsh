@@ -232,8 +232,9 @@ static inline uint32_t net_read_bits(net_bit_reader_t* reader, int count) {
 }
 
 uint16_t compass_coord(float value, float min_val, float max_val) {
+    if (value < min_val) value = min_val;
+    if (value > max_val) value = max_val;
     float normalized = (value - min_val) / (max_val - min_val);
-    return (uint16_t )(normalized * 65535.0f);
 }
 
 float decompress_coord(uint16_t value, float min_val, float max_val) {
