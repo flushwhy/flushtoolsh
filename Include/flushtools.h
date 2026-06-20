@@ -8,6 +8,86 @@
 #include <time.h>
 
 
+
+#if defined(__GNUC__) && !defined(__clang__)
+/* ---- GCC: nested functions inside statement expressions ---------------- */
+
+#define LAMBDA(ret, params, body)      \
+    __extension__                      \
+    ({                                 \
+        ret __lambda_fn__ params body  \
+        __lambda_fn__;                 \
+    })
+
+#define AS_FN(ret, params, body) \
+    ((ret (*)params) LAMBDA(ret, params, body))
+
+#elif defined(__clang__)
+/* ---- Clang: Blocks extension ------------------------------------------ */
+/* Compile with: clang -fblocks -lBlocksRuntime                            */
+
+#define BLOCK(params, body) \
+    (^params body)
+
+#define LAMBDA(ret, params, body) \
+    BLOCK(params, body)
+
+#define AS_FN(ret, params, body) \
+    BLOCK(params, body)
+
+#elif defined(_MSC_VER)
+/* ---- MSVC: named static function stamped out via __COUNTER__ ----------- */
+/*                                                                           */
+/* __COUNTER__ expands to a unique integer each time it is used,            */
+/* giving each LAMBDA call site its own function name (__lambda_0__,        */
+/* __lambda_1__, ...) so multiple lambdas in the same scope don't clash.    */
+/*                                                                           */
+/* Limitation: no capture — MSVC C has no closure mechanism.               */
+
+#define _LAMBDA_CONCAT_(a, b) a##b
+#define _LAMBDA_NAME_(n)      _LAMBDA_CONCAT_(__lambda_, n##__)
+
+#define LAMBDA(ret, params, body)             \
+    ( (ret (*)params)(                        \
+        (void)({                              \
+            static ret _LAMBDA_NAME_(__COUNTER__) params body; \
+            _LAMBDA_NAME_(__COUNTER__ - 1);   \
+        })                                    \
+    ) )
+
+/*
+ * MSVC __COUNTER__ approach above needs a small workaround because
+ * compound-statement expressions ({}) aren't valid C in MSVC.
+ * We use a helper macro that stamps a static function before the
+ * expression that references it.
+ *
+ * Recommended MSVC usage — two-step via DECL_FN + FN_PTR:
+ *
+ *   DECL_FN(int, my_add, (int a, int b), { return a + b; });
+ *   int (*add)(int, int) = FN_PTR(my_add);
+ *
+ * Or for one-liner callbacks, just write a named static function above
+ * the call site and pass it directly — MSVC C has no anonymous functions.
+ */
+#undef LAMBDA   /* remove the broken compound-stmt version */
+
+
+#define DECL_FN(ret, name, params, body) \
+    static ret name params body
+
+
+#define FN_PTR(name) (&name)
+
+#define AS_FN(ret, params, body) /* not directly expressible on MSVC — use DECL_FN + FN_PTR */
+
+#else
+#  error "LAMBDA: unsupported compiler. Use GCC, Clang, or MSVC."
+#endif /* compiler detection */
+
+/* FN_TYPE is compiler-agnostic */
+#define FN_TYPE(alias, ret, ...) \
+    typedef ret (*alias)(__VA_ARGS__)
+
 /* --- BIT-PACKING --- */
 
 typedef struct {
