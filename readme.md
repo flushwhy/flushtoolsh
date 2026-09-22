@@ -11,6 +11,7 @@ Drop `flushtools.h` into your project and you're done — no build system, no de
 | Module | Description |
 |---|---|
 | **Lambda macros** | Anonymous function helpers for GCC, Clang, and MSVC |
+| **Scoped cleanup** | C++ `std::unique_ptr`-style RAII for automatic resource management (GCC/Clang) |
 | **Bit packing** | Compact bit-level serialization for network packets |
 | **Quantization** | Float ↔ integer compression for bandwidth-sensitive data |
 | **Coordinate compression** | 16-bit encode/decode for world-space coordinates |
@@ -75,6 +76,36 @@ qsort(arr, n, sizeof(int), FN_PTR(my_cmp));
 | `FN_TYPE` | ✅ | ✅ | ✅ |
 | `BLOCK` (capture) | ❌ | ✅ | ❌ |
 | `DECL_FN` / `FN_PTR` | ✅ | ✅ | ✅ |
+
+---
+
+### Scoped cleanup (unique_ptr style)
+
+Bring C++ `std::unique_ptr`-style automatic resource management (RAII) into C via compiler cleanup attributes. Pointers automatically free when they leave scope, eliminating manual `free()` calls and leaks on early returns.
+
+```c
+void process_data(void) {
+    // Automatically freed when exiting scope (GCC/Clang)
+    UNIQUE_VAR(char, buffer, flush_free_standard) = malloc(256);
+    
+    if (!buffer) return; // Safe: no leaks on early return!
+
+    strcpy(buffer, "Hello scoped memory!");
+    printf("%s\n", buffer);
+}
+```
+
+For custom objects or library-specific destructors, define a custom cleanup helper using `DEFINE_FREE_FUNC`:
+
+```c
+// If your library provides: void my_texture_free(Texture *t);
+DEFINE_FREE_FUNC(free_texture, Texture, my_texture_free)
+
+void load_asset(void) {
+    UNIQUE_VAR(Texture, tex, free_texture) = load_my_texture();
+    // Automatically calls my_texture_free(tex) when leaving scope
+}
+```
 
 ---
 
@@ -156,9 +187,9 @@ unsigned long long uid  = random_gen(0, UINT32_MAX);
 
 | Compiler | Standard | Notes |
 |---|---|---|
-| GCC | C11, C17 | Full support |
-| Clang | C11, C17 | Full support; `-fblocks` for capture |
-| MSVC | C11, C17 | `DECL_FN`/`FN_PTR` instead of `LAMBDA` |
+| GCC | C11, C17 | Full support (including cleanup RAII & lambdas) |
+| Clang | C11, C17 | Full support (cleanup RAII; `-fblocks` for capture) |
+| MSVC | C11, C17 | Lambdas use `DECL_FN`/`FN_PTR`; cleanup unsupported |
 
 ---
 
