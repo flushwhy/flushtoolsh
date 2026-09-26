@@ -5,14 +5,13 @@
  *   gcc -std=c11 -Wall -Wextra -o test_flushtools test_flushtools.c
  *   ./test_flushtools
  *
- * Build (Clang, for the lambda/Blocks path):
- *   clang -std=c11 -fblocks -Wall -Wextra -o test_flushtools test_flushtools.c
- * -lBlocksRuntime
+ * Build (Clang):
+ *   clang -std=c11 -Wall -Wextra -o test_flushtools test_flushtools.c
  *   ./test_flushtools
  *
- * No external test framework — flushtools.h is a single-header, zero-dependency
- * library, so the tests follow the same philosophy: one file, no build system,
- * plain C11.
+ * Build (MSVC):
+ *   cl /std:c11 /W4 test_flushtools.c
+ *   test_flushtools.exe
  */
 
 #include "flushtools.h"
@@ -20,7 +19,7 @@
 #include <math.h>
 
 /* ---------------------------------------------------------------------- */
-/* Minimal test harness                                                    */
+/* Minimal test harness                                                   */
 /* ---------------------------------------------------------------------- */
 
 static int g_tests_run = 0;
@@ -69,10 +68,10 @@ static const char *g_current_test = NULL;
   } while (0)
 
 /* ---------------------------------------------------------------------- */
-/* Lambda macros (GCC / Clang only — MSVC uses DECL_FN / FN_PTR instead)   */
+/* Lambda & Scope Macros (Supported on GCC, Clang, and MSVC)              */
 /* ---------------------------------------------------------------------- */
 
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER)
 
 TEST(lambda_basic_call) {
   int (*add)(int, int) = LAMBDA(int, (int a, int b), { return a + b; });
@@ -101,21 +100,14 @@ TEST(fn_type_typedef) {
   CHECK_EQ_INT(is_even(7), 0);
 }
 
-#endif /* __GNUC__ || __clang__ */
+#endif /* __GNUC__ || __clang__ || _MSC_VER */
 
 /* ---------------------------------------------------------------------- */
-/* Scoped cleanup (RAII-style unique pointers)                             */
+/* Scoped cleanup (RAII-style unique pointers - GCC/Clang only)          */
 /* ---------------------------------------------------------------------- */
 
 #if defined(__GNUC__) || defined(__clang__)
 
-/* NOTE: The README documents `UNIQUE_VAR(...) = malloc(256);` (assignment
- * folded into the declaration), but UNIQUE_VAR itself expands to
- * `type *__attribute__((cleanup(f))) name = NULL`, which already assigns
- * NULL. Appending `= malloc(...)` after that produces `name = NULL =
- * malloc(...)`, which is not valid C and fails to compile (confirmed
- * below). The tests use the two-statement form that the macro's actual
- * expansion supports. See BUGS.md, item 2. */
 TEST(unique_var_frees_and_nulls_on_scope_exit) {
   char *escaped_ptr_snapshot = NULL;
   {
@@ -127,17 +119,10 @@ TEST(unique_var_frees_and_nulls_on_scope_exit) {
     escaped_ptr_snapshot = buffer;
     (void)escaped_ptr_snapshot;
   }
-  /* We can't safely dereference freed memory to prove it was freed without
-   * relying on UB / an allocator's internal state, so this test only proves
-   * the macro compiles and runs without crashing across a scope exit -- the
-   * strongest portable guarantee available. Run under valgrind/ASan for a
-   * real leak-check (see the Makefile's `test-asan` target). */
   CHECK(1);
 }
 
 TEST(unique_var_early_return_no_leak) {
-  /* Exercises the documented "safe on early return" example. Leak-detection
-   * happens via ASan/valgrind, not this assertion. */
   void *result = NULL;
   {
     UNIQUE_VAR(char, buffer, flush_free_standard);
@@ -171,20 +156,10 @@ TEST(custom_cleanup_func_is_invoked) {
   CHECK_EQ_INT(texture_free_calls, 1);
 }
 
-#if 0
-/* This reproduces the README's documented usage verbatim and does not
- * compile, by design -- kept here (disabled) as a citable regression case
- * for BUGS.md item 2. Flip to #if 1 locally to see the compiler error. */
-TEST(readme_documented_inline_assignment_form) {
-  UNIQUE_VAR(char, buffer, flush_free_standard) = malloc(256);
-  CHECK(buffer != NULL);
-}
-#endif
-
 TEST(cleanup_handles_null_without_crashing) {
   {
     UNIQUE_VAR(char, buffer, flush_free_standard);
-    (void)buffer; /* stays NULL; cleanup must not crash on NULL */
+    (void)buffer;
   }
   CHECK(1);
 }
@@ -192,7 +167,7 @@ TEST(cleanup_handles_null_without_crashing) {
 #endif /* __GNUC__ || __clang__ */
 
 /* ---------------------------------------------------------------------- */
-/* Bit packing                                                             */
+/* Bit packing                                                           */
 /* ---------------------------------------------------------------------- */
 
 TEST(bit_writer_reader_roundtrip_single_value) {
@@ -211,9 +186,9 @@ TEST(bit_writer_reader_roundtrip_multiple_values) {
   net_bit_writer_t writer;
   net_writer_init(&writer, buf, sizeof(buf));
 
-  net_writer_bits(&writer, 0x3, 2);     /* 2 bits  */
+  net_writer_bits(&writer, 0x3, 2);    /* 2 bits  */
   net_writer_bits(&writer, 0x7F, 7);    /* 7 bits  */
-  net_writer_bits(&writer, 0x1, 1);     /* 1 bit   */
+  net_writer_bits(&writer, 0x1, 1);    /* 1 bit   */
   net_writer_bits(&writer, 0xABCD, 16); /* 16 bits */
 
   net_bit_reader_t reader = {buf, 0};
@@ -233,14 +208,13 @@ TEST(bit_writer_init_zeroes_buffer) {
 }
 
 TEST(bit_writer_respects_capacity) {
-  uint8_t buf[1] = {0}; /* 8 bits capacity */
+  uint8_t buf[1] = {0};
   net_bit_writer_t writer;
   net_writer_init(&writer, buf, sizeof(buf));
 
-  net_writer_bits(&writer, 0xFF, 8); /* fills exactly */
+  net_writer_bits(&writer, 0xFF, 8);
   CHECK_EQ_INT(writer.current_bit, 8);
 
-  /* Writing beyond capacity should be a documented no-op, not overflow. */
   net_writer_bits(&writer, 0x1, 1);
   CHECK_EQ_INT(writer.current_bit, 8);
 }
@@ -256,12 +230,12 @@ TEST(bit_writer_all_zero_bits_roundtrip) {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Quantization                                                            */
+/* Quantization                                                          */
 /* ---------------------------------------------------------------------- */
 
 TEST(quantize_dequantize_roundtrip_midrange) {
   uint32_t q = net_quantize(0.75f, 0.0f, 1.0f, 8);
-  CHECK_EQ_INT(q, 191); /* documented example value */
+  CHECK_EQ_INT(q, 191);
 
   float f = net_dequantize(q, 0.0f, 1.0f, 8);
   CHECK_NEAR(f, 0.75f, 0.01f);
@@ -289,7 +263,6 @@ TEST(quantize_dequantize_roundtrip_various_bit_depths) {
 
   for (size_t bi = 0; bi < sizeof(bit_depths) / sizeof(bit_depths[0]); bi++) {
     int bits = bit_depths[bi];
-    /* Max quantization error is half a step: 1 / (2 * (2^bits - 1)). */
     float max_err = 1.0f / (2.0f * (float)((1U << bits) - 1)) + 1e-4f;
     for (size_t si = 0; si < sizeof(samples) / sizeof(samples[0]); si++) {
       uint32_t q = net_quantize(samples[si], 0.0f, 1.0f, bits);
@@ -300,20 +273,18 @@ TEST(quantize_dequantize_roundtrip_various_bit_depths) {
 }
 
 TEST(quantize_nonzero_range) {
-  /* Range other than [0,1] to make sure min/max are applied, not assumed. */
   uint32_t q = net_quantize(150.0f, 100.0f, 200.0f, 8);
   float f = net_dequantize(q, 100.0f, 200.0f, 8);
   CHECK_NEAR(f, 150.0f, 1.0f);
 }
 
 /* ---------------------------------------------------------------------- */
-/* Coordinate compression                                                  */
+/* Coordinate compression                                                */
 /* ---------------------------------------------------------------------- */
 
 TEST(coord_compress_decompress_roundtrip) {
   uint16_t packed = compass_coord(123.4f, 0.0f, 1000.0f);
   float unpacked = decompress_coord(packed, 0.0f, 1000.0f);
-  /* 16-bit quantization over a range of 1000 -> step size ~0.0153 */
   CHECK_NEAR(unpacked, 123.4f, 0.02f);
 }
 
@@ -328,14 +299,13 @@ TEST(coord_compress_endpoints) {
 }
 
 TEST(coord_negative_range) {
-  /* World coordinates are often signed; make sure negative ranges work. */
   uint16_t packed = compass_coord(-50.0f, -100.0f, 100.0f);
   float unpacked = decompress_coord(packed, -100.0f, 100.0f);
   CHECK_NEAR(unpacked, -50.0f, 0.01f);
 }
 
 /* ---------------------------------------------------------------------- */
-/* Timer                                                                   */
+/* Timer                                                                 */
 /* ---------------------------------------------------------------------- */
 
 TEST(timer_zero_duration_is_immediately_finished) {
@@ -363,25 +333,15 @@ static int tick_count = 0;
 static void on_tick(void) { tick_count++; }
 
 TEST(timer_run_terminates_and_finishes) {
-  /* timer_run() has a race condition (see BUGS.md item 5): the while-loop's
-   * own condition re-samples time(NULL) every iteration, and on the
-   * iteration where the clock actually ticks over, that outer check almost
-   * always sees "finished" and exits the loop *before* the loop body gets a
-   * chance to sample time() again and fire the callback. In practice this
-   * means the callback fires on well under half of runs (measured ~1/8 in
-   * a tight loop) -- asserting tick_count >= 1 here would make this test
-   * flaky in CI through no fault of the test itself. What IS guaranteed
-   * regardless of the race is that timer_run returns and the timer reports
-   * finished, so that's what this test checks. */
   tick_count = 0;
   Timer t;
-  timer_init(&t, 1); /* short duration: keeps the test suite fast */
+  timer_init(&t, 1);
   timer_run(&t, on_tick);
   CHECK(timer_is_finished(&t));
 }
 
 /* ---------------------------------------------------------------------- */
-/* Random                                                                  */
+/* Random                                                                */
 /* ---------------------------------------------------------------------- */
 
 TEST(random_gen_stays_within_bounds) {
@@ -396,12 +356,10 @@ TEST(random_gen_degenerate_range_returns_the_value) {
 }
 
 TEST(random_gen_inverted_range_returns_zero) {
-  /* Documented/implemented behavior: max < min yields 0 rather than UB. */
   CHECK_EQ_INT(random_gen(10, 5), 0);
 }
 
 TEST(random_gen_produces_more_than_one_distinct_value) {
-  /* Weak but meaningful sanity check that it isn't a constant generator. */
   unsigned long long first = random_gen(0, 1000000);
   int saw_different = 0;
   for (int i = 0; i < 20; i++) {
@@ -414,7 +372,7 @@ TEST(random_gen_produces_more_than_one_distinct_value) {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Arena allocator                                                         */
+/* Arena allocator                                                       */
 /* ---------------------------------------------------------------------- */
 
 TEST(arena_init_sets_fields) {
@@ -441,7 +399,7 @@ TEST(arena_alloc_aligns_to_8_bytes) {
   uint8_t backing[64];
   Arena a = arena_init(backing, sizeof(backing));
 
-  void *p1 = arena_alloc(&a, 1); /* rounds up to 8 */
+  void *p1 = arena_alloc(&a, 1);
   void *p2 = arena_alloc(&a, 1);
   CHECK_EQ_INT((uint8_t *)p2 - (uint8_t *)p1, 8);
 }
@@ -453,7 +411,7 @@ TEST(arena_alloc_fails_gracefully_when_full) {
   void *p1 = arena_alloc(&a, 8);
   CHECK(p1 != NULL);
 
-  void *p2 = arena_alloc(&a, 1); /* no room left */
+  void *p2 = arena_alloc(&a, 1);
   CHECK(p2 == NULL);
 }
 
@@ -472,15 +430,17 @@ TEST(arena_reset_allows_reuse) {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Runner                                                                  */
+/* Runner                                                                */
 /* ---------------------------------------------------------------------- */
 
 int main(void) {
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER)
   RUN_TEST(lambda_basic_call);
   RUN_TEST(as_fn_with_qsort);
   RUN_TEST(fn_type_typedef);
+#endif
 
+#if defined(__GNUC__) || defined(__clang__)
   RUN_TEST(unique_var_frees_and_nulls_on_scope_exit);
   RUN_TEST(unique_var_early_return_no_leak);
   RUN_TEST(custom_cleanup_func_is_invoked);
