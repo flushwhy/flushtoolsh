@@ -6,7 +6,8 @@
  *   ./test_flushtools
  *
  * Build (Clang, for the lambda/Blocks path):
- *   clang -std=c11 -fblocks -Wall -Wextra -o test_flushtools test_flushtools.c -lBlocksRuntime
+ *   clang -std=c11 -fblocks -Wall -Wextra -o test_flushtools test_flushtools.c
+ * -lBlocksRuntime
  *   ./test_flushtools
  *
  * No external test framework — flushtools.h is a single-header, zero-dependency
@@ -27,44 +28,44 @@ static int g_tests_failed = 0;
 static const char *g_current_test = NULL;
 
 #define TEST(name) static void test_##name(void)
-#define RUN_TEST(name)                                                       \
-  do {                                                                       \
-    g_current_test = #name;                                                  \
-    g_tests_run++;                                                           \
-    test_##name();                                                           \
+#define RUN_TEST(name)                                                         \
+  do {                                                                         \
+    g_current_test = #name;                                                    \
+    g_tests_run++;                                                             \
+    test_##name();                                                             \
   } while (0)
 
-#define CHECK(cond)                                                          \
-  do {                                                                       \
-    if (!(cond)) {                                                           \
-      fprintf(stderr, "  [FAIL] %s: CHECK(%s) at %s:%d\n", g_current_test,   \
-              #cond, __FILE__, __LINE__);                                    \
-      g_tests_failed++;                                                      \
-    }                                                                        \
+#define CHECK(cond)                                                            \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      fprintf(stderr, "  [FAIL] %s: CHECK(%s) at %s:%d\n", g_current_test,     \
+              #cond, __FILE__, __LINE__);                                      \
+      g_tests_failed++;                                                        \
+    }                                                                          \
   } while (0)
 
-#define CHECK_EQ_INT(a, b)                                                    \
-  do {                                                                       \
-    long long _a = (long long)(a), _b = (long long)(b);                      \
-    if (_a != _b) {                                                          \
-      fprintf(stderr,                                                        \
-              "  [FAIL] %s: CHECK_EQ_INT(%s, %s) -> %lld != %lld at %s:%d\n", \
-              g_current_test, #a, #b, _a, _b, __FILE__, __LINE__);           \
-      g_tests_failed++;                                                      \
-    }                                                                        \
+#define CHECK_EQ_INT(a, b)                                                     \
+  do {                                                                         \
+    long long _a = (long long)(a), _b = (long long)(b);                        \
+    if (_a != _b) {                                                            \
+      fprintf(stderr,                                                          \
+              "  [FAIL] %s: CHECK_EQ_INT(%s, %s) -> %lld != %lld at %s:%d\n",  \
+              g_current_test, #a, #b, _a, _b, __FILE__, __LINE__);             \
+      g_tests_failed++;                                                        \
+    }                                                                          \
   } while (0)
 
-#define CHECK_NEAR(a, b, eps)                                                 \
-  do {                                                                       \
-    double _a = (double)(a), _b = (double)(b);                               \
-    if (fabs(_a - _b) > (eps)) {                                             \
-      fprintf(stderr,                                                        \
-              "  [FAIL] %s: CHECK_NEAR(%s, %s) -> %f vs %f (eps=%f) at "     \
-              "%s:%d\n",                                                     \
-              g_current_test, #a, #b, _a, _b, (double)(eps), __FILE__,       \
-              __LINE__);                                                     \
-      g_tests_failed++;                                                      \
-    }                                                                        \
+#define CHECK_NEAR(a, b, eps)                                                  \
+  do {                                                                         \
+    double _a = (double)(a), _b = (double)(b);                                 \
+    if (fabs(_a - _b) > (eps)) {                                               \
+      fprintf(stderr,                                                          \
+              "  [FAIL] %s: CHECK_NEAR(%s, %s) -> %f vs %f (eps=%f) at "       \
+              "%s:%d\n",                                                       \
+              g_current_test, #a, #b, _a, _b, (double)(eps), __FILE__,         \
+              __LINE__);                                                       \
+      g_tests_failed++;                                                        \
+    }                                                                          \
   } while (0)
 
 /* ---------------------------------------------------------------------- */
@@ -84,8 +85,7 @@ TEST(as_fn_with_qsort) {
   size_t n = sizeof(arr) / sizeof(arr[0]);
 
   cmp_calls = 0;
-  qsort(arr, n, sizeof(int),
-        AS_FN(int, (const void *a, const void *b), {
+  qsort(arr, n, sizeof(int), AS_FN(int, (const void *a, const void *b), {
           return *(const int *)a - *(const int *)b;
         }));
 
@@ -152,7 +152,9 @@ TEST(unique_var_early_return_no_leak) {
 }
 
 static int texture_free_calls = 0;
-typedef struct { int dummy; } FakeTexture;
+typedef struct {
+  int dummy;
+} FakeTexture;
 static void fake_texture_free(FakeTexture *t) {
   texture_free_calls++;
   free(t);
@@ -209,9 +211,9 @@ TEST(bit_writer_reader_roundtrip_multiple_values) {
   net_bit_writer_t writer;
   net_writer_init(&writer, buf, sizeof(buf));
 
-  net_writer_bits(&writer, 0x3, 2);   /* 2 bits  */
-  net_writer_bits(&writer, 0x7F, 7);  /* 7 bits  */
-  net_writer_bits(&writer, 0x1, 1);   /* 1 bit   */
+  net_writer_bits(&writer, 0x3, 2);     /* 2 bits  */
+  net_writer_bits(&writer, 0x7F, 7);    /* 7 bits  */
+  net_writer_bits(&writer, 0x1, 1);     /* 1 bit   */
   net_writer_bits(&writer, 0xABCD, 16); /* 16 bits */
 
   net_bit_reader_t reader = {buf, 0};

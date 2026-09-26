@@ -1,10 +1,6 @@
 #ifndef FLUSHTOOLS_H
 #define FLUSHTOOLS_H
 
-#if !defined(_POSIX_C_SOURCE) && !defined(_MSC_VER)
-#define _POSIX_C_SOURCE 199309L
-#endif
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,37 +12,26 @@
  * ============================================================================
  */
 
-#if defined(__GNUC__) && !defined(__clang__)
-/* ---- GCC: nested functions inside statement expressions ---------------- */
+#if defined(__GNUC__) || defined(__clang__)
+/* ---- GCC & Clang: nested functions inside statement expressions ------- */
 
 #define LAMBDA(ret, params, body)                                              \
   __extension__({ ret __lambda_fn__ params body __lambda_fn__; })
 
 #define AS_FN(ret, params, body) ((ret(*) params)LAMBDA(ret, params, body))
 
-#elif defined(__clang__)
-/* ---- Clang: Blocks extension ------------------------------------------ */
-/* Compile with: clang -fblocks -lBlocksRuntime                            */
-
-#define BLOCK(params, body) (^params body)
-
-#define LAMBDA(ret, params, body) BLOCK(params, body)
-
-#define AS_FN(ret, params, body) BLOCK(params, body)
-
 #elif defined(_MSC_VER)
 /* ---- MSVC: named static function stamped out via __COUNTER__ ----------- */
 
-#define _LAMBDA_CONCAT_(a, b) a##b
-#define _LAMBDA_NAME_(n) _LAMBDA_CONCAT_(__lambda_, n##__)
+#define _LAMBDA_CONCAT_2_(a, b) a##b
+#define _LAMBDA_CONCAT_(a, b) _LAMBDA_CONCAT_2_(a, b)
+#define _LAMBDA_NAME_ _LAMBDA_CONCAT_(__lambda_func_, __COUNTER__)
 
-#define DECL_FN(ret, name, params, body) static ret name params body
+/* MSVC helper to declare a static helper function inline */
+#define LAMBDA(ret, params, body)                                              \
+  static ret _LAMBDA_NAME_ params body _LAMBDA_NAME_
 
-#define FN_PTR(name) (&name)
-
-#define AS_FN(                                                                 \
-    ret, params,                                                               \
-    body) /* not directly expressible on MSVC — use DECL_FN + FN_PTR */
+#define AS_FN(ret, params, body) LAMBDA(ret, params, body)
 
 #else
 #error "FLUSHTOOLS: unsupported compiler. Use GCC, Clang, or MSVC."
@@ -167,7 +152,6 @@ static inline void timer_run(Timer *timer, void (*work_callback)(void)) {
 
 static inline unsigned long long random_gen(unsigned long long min_val,
                                             unsigned long long max_val) {
-  // Non-cryptographic RNG for tasks like password generation
   if (max_val < min_val) {
     return 0;
   }
@@ -257,17 +241,17 @@ static inline float decompress_coord(uint16_t value, float min_val,
 }
 
 /* ==============================================================================
- * Area IMPLEMENTATION
+ * ARENA IMPLEMENTATION
  * ==============================================================================
  */
 
 static inline Arena arena_init(void *buffer, size_t capacity) {
-  return (Arena){.buffer = (uint8_t *)buffer, .capacity = capacity, .offset = 0};
+  Arena a = {.buffer = (uint8_t *)buffer, .capacity = capacity, .offset = 0};
+  return a;
 }
 
 static inline void *arena_alloc(Arena *arena, size_t size) {
-  // This is for 8bit alinement, I might change this to enbled in the future.
-  size_t aligned_size = (size + 7) & ~(size_t)7;
+  size_t aligned_size = (size + 7) & ~7;
   if (arena->offset + aligned_size > arena->capacity) {
     return NULL;
   }
