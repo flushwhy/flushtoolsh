@@ -1,6 +1,11 @@
 #ifndef FLUSHTOOLS_H
 #define FLUSHTOOLS_H
 
+/* Force POSIX compliance for clock_gettime on Linux/macOS */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 199309L
+#endif
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,12 +13,44 @@
 #include <time.h>
 
 /* ============================================================================
+ * WINDOWS/MSVC SHIM FOR POSIX TIME
+ * ============================================================================
+ */
+#if defined(_MSC_VER) || defined(_WIN32)
+  #define WIN32_LEAN_AND_MEAN
+  #include <windows.h>
+  #ifndef CLOCK_MONOTONIC
+    #define CLOCK_MONOTONIC 1
+  #endif
+
+  static inline int clock_gettime(int clock_id, struct timespec *spec) {
+      static LARGE_INTEGER freq = {0};
+      LARGE_INTEGER count;
+      (void)clock_id;
+      if (freq.QuadPart == 0) {
+          QueryPerformanceFrequency(&freq);
+      }
+      QueryPerformanceCounter(&count);
+      spec->tv_sec = (time_t)(count.QuadPart / freq.QuadPart);
+      spec->tv_nsec = (long)(((count.QuadPart % freq.QuadPart) * 1000000000ll) / freq.QuadPart);
+      return 0;
+  }
+#endif
+
+/* ============================================================================
  * COMPILER DETECTION & LAMBDA / SCOPE UTILITIES
  * ============================================================================
  */
 
-#if defined(__GNUC__) || defined(__clang__)
-/* ---- GCC & Clang: nested functions inside statement expressions ------- */
+#if defined(__clang__) && defined(__BLOCKS__)
+/* ---- Clang: Blocks extension ------------------------------------------ */
+/* Compile with: clang -fblocks -lBlocksRuntime                            */
+
+#define LAMBDA(ret, params, body) ((ret (*) params)(^ params body))
+#define AS_FN(ret, params, body)  ((ret (*) params)(^ params body))
+
+#elif defined(__GNUC__) && !defined(__clang__)
+/* ---- GCC: nested functions inside statement expressions ---------------- */
 
 #define LAMBDA(ret, params, body)                                              \
   __extension__({ ret __lambda_fn__ params body __lambda_fn__; })
@@ -22,12 +59,14 @@
 
 #elif defined(_MSC_VER)
 /* ---- MSVC: named static function stamped out via __COUNTER__ ----------- */
+/* NOTE: In MSVC C, you CANNOT use this inline inside another function call */
+/* like qsort(). It must be used at the global/file scope.                  */
 
 #define _LAMBDA_CONCAT_2_(a, b) a##b
 #define _LAMBDA_CONCAT_(a, b) _LAMBDA_CONCAT_2_(a, b)
 #define _LAMBDA_NAME_ _LAMBDA_CONCAT_(__lambda_func_, __COUNTER__)
 
-/* MSVC helper to declare a static helper function inline */
+/* MSVC helper to declare a static helper function */
 #define LAMBDA(ret, params, body)                                              \
   static ret _LAMBDA_NAME_ params body _LAMBDA_NAME_
 
@@ -137,7 +176,7 @@ static inline void timer_run(Timer *timer, void (*work_callback)(void)) {
     time_t now = time(NULL);
     double elapsed = difftime(now, last_time);
 
-    if (elapsed >= 1) {
+    if (elapsed >= 1.0) {
       printf("Timer: %.0f seconds passed\n", difftime(now, timer->start_time));
       work_callback();
       last_time = now;
