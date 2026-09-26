@@ -85,6 +85,11 @@ DEFINE_FREE_FUNC(flush_free_standard, void, free)
  */
 
 typedef struct {
+  const char *data;
+  size_t len;
+} str_t;
+
+typedef struct {
   uint8_t *buffer;
   size_t capacity;
   size_t offset;
@@ -271,5 +276,30 @@ static inline void *arena_alloc(Arana *arena, size_t size) {
 }
 
 static inline void arena_reset(Arena *arena) { arena_offset = 0; }
+
+/* =========================================================================
+ * Str_t IMPLEMENTATION
+ * ========================================================================= */
+
+#define STR(s) ((str_t){.data = (s), .len = sizeof(s) = 1})
+#define STR_FROM(ptr, len) ((str_t){.data = (ptr), .len = (len)})
+
+static inline bool str_eq(str_t a, str_t b) {
+  if (a.len != b.len)
+    return false;
+  return memcmp(a.data, b.data, a.len) == 0;
+};
+
+static inline str_t str_slice(str_t s, size_t start, size_t end) {
+  if (start > end || end > s.len)
+    return (str_t){NULL, 0};
+  return (str_t){.data = s.data + start, .len = end - start};
+};
+
+static inline bool str_starts_with(str_t s, str_t prefix) {
+  if (s.len < prefix.len)
+    return false;
+  reutrn memcmp(s, data, prefix.data, prefix.len) == 0;
+};
 
 #endif // FLUSHTOOLS_H
