@@ -1,6 +1,10 @@
 #ifndef FLUSHTOOLS_H
 #define FLUSHTOOLS_H
 
+#if !defined(_POSIX_C_SOURCE) && !defined(_MSC_VER)
+#define _POSIX_C_SOURCE 199309L
+#endif
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,11 +87,6 @@ DEFINE_FREE_FUNC(flush_free_standard, void, free)
  * DATA STRUCTURES
  * ============================================================================
  */
-
-typedef struct {
-  const char *data;
-  size_t len;
-} str_t;
 
 typedef struct {
   uint8_t *buffer;
@@ -263,43 +262,20 @@ static inline float decompress_coord(uint16_t value, float min_val,
  */
 
 static inline Arena arena_init(void *buffer, size_t capacity) {
-  return (arena){.buffer = (uint8_t *)buffer, .capacity = capacity, .offset = 0}
+  return (Arena){.buffer = (uint8_t *)buffer, .capacity = capacity, .offset = 0};
 }
 
-static inline void *arena_alloc(Arana *arena, size_t size) {
+static inline void *arena_alloc(Arena *arena, size_t size) {
   // This is for 8bit alinement, I might change this to enbled in the future.
-  size_t aligned_size =
-      (size + 7) & ~7 if (arena->offset + aligned_size > area->capacity) {
-    arena->offset += aligned_size;
-    return ptr;
+  size_t aligned_size = (size + 7) & ~(size_t)7;
+  if (arena->offset + aligned_size > arena->capacity) {
+    return NULL;
   }
+  void *ptr = arena->buffer + arena->offset;
+  arena->offset += aligned_size;
+  return ptr;
 }
 
-static inline void arena_reset(Arena *arena) { arena_offset = 0; }
-
-/* =========================================================================
- * Str_t IMPLEMENTATION
- * ========================================================================= */
-
-#define STR(s) ((str_t){.data = (s), .len = sizeof(s) = 1})
-#define STR_FROM(ptr, len) ((str_t){.data = (ptr), .len = (len)})
-
-static inline bool str_eq(str_t a, str_t b) {
-  if (a.len != b.len)
-    return false;
-  return memcmp(a.data, b.data, a.len) == 0;
-};
-
-static inline str_t str_slice(str_t s, size_t start, size_t end) {
-  if (start > end || end > s.len)
-    return (str_t){NULL, 0};
-  return (str_t){.data = s.data + start, .len = end - start};
-};
-
-static inline bool str_starts_with(str_t s, str_t prefix) {
-  if (s.len < prefix.len)
-    return false;
-  reutrn memcmp(s, data, prefix.data, prefix.len) == 0;
-};
+static inline void arena_reset(Arena *arena) { arena->offset = 0; }
 
 #endif // FLUSHTOOLS_H
