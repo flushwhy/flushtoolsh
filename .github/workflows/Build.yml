@@ -54,16 +54,16 @@ jobs:
 
       - name: Build (GCC)
         if: matrix.compiler == 'gcc'
-        run: gcc -std=c11 -Wall -Wextra -Werror -o test_flushtools test_flushtools.c -lm
+        run: gcc -std=c11 -Wall -Wextra -Werror -Isrc -o test_flushtools test_flushtools.c -lm
 
       - name: Build (Clang)
         if: matrix.compiler == 'clang'
-        run: clang -std=c11 -Wall -Wextra -Werror -fblocks -o test_flushtools test_flushtools.c -lm -lBlocksRuntime
+        run: clang -std=c11 -Wall -Wextra -Werror -fblocks -Isrc -o test_flushtools test_flushtools.c -lm -lBlocksRuntime
 
       - name: Build (MSVC)
         if: matrix.compiler == 'msvc'
         shell: cmd
-        run: cl /std:c11 /W4 /Fe:test_flushtools.exe test_flushtools.c
+        run: cl /std:c11 /W4 /Isrc /Fe:test_flushtools.exe test_flushtools.c
 
       - name: Run tests (Linux)
         if: runner.os == 'Linux'
@@ -86,6 +86,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build with ASan + UBSan
-        run: gcc -std=c11 -Wall -Wextra -fsanitize=address,undefined -g -o test_flushtools_asan test_flushtools.c -lm
+        run: gcc -std=c11 -Wall -Wextra -fsanitize=address,undefined -g -Isrc -o test_flushtools_asan test_flushtools.c -lm
       - name: Run tests under ASan
         run: ./test_flushtools_asan
