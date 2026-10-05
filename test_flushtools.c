@@ -429,6 +429,8 @@ TEST(arena_reset_allows_reuse) {
   CHECK(p2 == backing);
 }
 
+int test_bit_writer_reader_roundtrip_single_value(void);
+
 /* ---------------------------------------------------------------------- */
 /* Runner                                                                */
 /* ---------------------------------------------------------------------- */

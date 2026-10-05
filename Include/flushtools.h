@@ -1,11 +1,6 @@
 #ifndef FLUSHTOOLS_H
 #define FLUSHTOOLS_H
 
-/* Force POSIX compliance for clock_gettime on Linux/macOS */
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 199309L
-#endif
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,43 +8,11 @@
 #include <time.h>
 
 /* ============================================================================
- * WINDOWS/MSVC SHIM FOR POSIX TIME
- * ============================================================================
- */
-#if defined(_MSC_VER) || defined(_WIN32)
-  #define WIN32_LEAN_AND_MEAN
-  #include <windows.h>
-  #ifndef CLOCK_MONOTONIC
-    #define CLOCK_MONOTONIC 1
-  #endif
-
-  static inline int clock_gettime(int clock_id, struct timespec *spec) {
-      static LARGE_INTEGER freq = {0};
-      LARGE_INTEGER count;
-      (void)clock_id;
-      if (freq.QuadPart == 0) {
-          QueryPerformanceFrequency(&freq);
-      }
-      QueryPerformanceCounter(&count);
-      spec->tv_sec = (time_t)(count.QuadPart / freq.QuadPart);
-      spec->tv_nsec = (long)(((count.QuadPart % freq.QuadPart) * 1000000000ll) / freq.QuadPart);
-      return 0;
-  }
-#endif
-
-/* ============================================================================
  * COMPILER DETECTION & LAMBDA / SCOPE UTILITIES
  * ============================================================================
  */
 
-#if defined(__clang__) && defined(__BLOCKS__)
-/* ---- Clang: Blocks extension ------------------------------------------ */
-/* Compile with: clang -fblocks -lBlocksRuntime                            */
-
-#define LAMBDA(ret, params, body) ((ret (*) params)(^ params body))
-#define AS_FN(ret, params, body)  ((ret (*) params)(^ params body))
-
-#elif defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__) && !defined(__clang__)
 /* ---- GCC: nested functions inside statement expressions ---------------- */
 
 #define LAMBDA(ret, params, body)                                              \
@@ -57,23 +20,19 @@
 
 #define AS_FN(ret, params, body) ((ret(*) params)LAMBDA(ret, params, body))
 
+#elif defined(__clang__)
+/* ---- Clang: Blocks extension ------------------------------------------ */
+
+#define BLOCK(params, body) (^params body)
+#define LAMBDA(ret, params, body) BLOCK(params, body)
+#define AS_FN(ret, params, body) BLOCK(params, body)
+
 #elif defined(_MSC_VER)
-/* ---- MSVC: named static function stamped out via __COUNTER__ ----------- */
-/* NOTE: In MSVC C, you CANNOT use this inline inside another function call */
-/* like qsort(). It must be used at the global/file scope.                  */
+/* ---- MSVC: Named static function helpers ------------------------------ */
 
-#define _LAMBDA_CONCAT_2_(a, b) a##b
-#define _LAMBDA_CONCAT_(a, b) _LAMBDA_CONCAT_2_(a, b)
-#define _LAMBDA_NAME_ _LAMBDA_CONCAT_(__lambda_func_, __COUNTER__)
+#define DECL_FN(ret, name, params, body) static ret name params body
+#define FN_PTR(name) (&name)
 
-/* MSVC helper to declare a static helper function */
-#define LAMBDA(ret, params, body)                                              \
-  static ret _LAMBDA_NAME_ params body _LAMBDA_NAME_
-
-#define AS_FN(ret, params, body) LAMBDA(ret, params, body)
-
-#else
-#error "FLUSHTOOLS: unsupported compiler. Use GCC, Clang, or MSVC."
 #endif /* compiler detection */
 
 /* FN_TYPE is compiler-agnostic */
@@ -81,13 +40,11 @@
 
 /* ============================================================================
  * SCOPED RESOURCE MANAGEMENT (C++ unique_ptr STYLE RAII)
- * Supported natively on GCC & Clang via __attribute__((cleanup))
  * ============================================================================
  */
 
 #if defined(__GNUC__) || defined(__clang__)
 
-// Helper macro to define a typed cleanup function for any pointer type
 #define DEFINE_FREE_FUNC(name, type, free_call)                                \
   static inline void name(void *p) {                                           \
     type **ptr = (type **)p;                                                   \
@@ -97,12 +54,9 @@
     }                                                                          \
   }
 
-// Declares a variable that automatically calls its cleanup function when going
-// out of scope
 #define UNIQUE_VAR(type, name, free_func)                                      \
   type *__attribute__((cleanup(free_func))) name = NULL
 
-// Standard heap allocation unique pointer helper
 DEFINE_FREE_FUNC(flush_free_standard, void, free)
 
 #endif // __GNUC__ || __clang__
@@ -176,7 +130,7 @@ static inline void timer_run(Timer *timer, void (*work_callback)(void)) {
     time_t now = time(NULL);
     double elapsed = difftime(now, last_time);
 
-    if (elapsed >= 1.0) {
+    if (elapsed >= 1) {
       printf("Timer: %.0f seconds passed\n", difftime(now, timer->start_time));
       work_callback();
       last_time = now;
@@ -195,13 +149,21 @@ static inline unsigned long long random_gen(unsigned long long min_val,
     return 0;
   }
 
+  unsigned long long seed;
+#if defined(_MSC_VER) || defined(_WIN32)
+  seed = (unsigned long long)time(NULL) ^ (unsigned long long)clock();
+#else
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  unsigned long long seed = ts.tv_nsec ^ ts.tv_sec;
+  seed = (unsigned long long)ts.tv_nsec ^ (unsigned long long)ts.tv_sec;
+#endif
   srand((unsigned int)seed);
 
   unsigned long long range = max_val - min_val + 1;
-  return min_val + (rand() % range);
+  if (range == 0) {
+    return min_val + ((unsigned long long)rand());
+  }
+  return min_val + ((unsigned long long)rand() % range);
 }
 
 /* ============================================================================
@@ -285,8 +247,11 @@ static inline float decompress_coord(uint16_t value, float min_val,
  */
 
 static inline Arena arena_init(void *buffer, size_t capacity) {
-  Arena a = {.buffer = (uint8_t *)buffer, .capacity = capacity, .offset = 0};
-  return a;
+  Arena arena;
+  arena.buffer = (uint8_t *)buffer;
+  arena.capacity = capacity;
+  arena.offset = 0;
+  return arena;
 }
 
 static inline void *arena_alloc(Arena *arena, size_t size) {
@@ -299,6 +264,8 @@ static inline void *arena_alloc(Arena *arena, size_t size) {
   return ptr;
 }
 
-static inline void arena_reset(Arena *arena) { arena->offset = 0; }
+static inline void arena_reset(Arena *arena) { 
+  arena->offset = 0; 
+}
 
 #endif // FLUSHTOOLS_H
