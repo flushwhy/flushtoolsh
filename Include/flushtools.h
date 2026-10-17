@@ -253,23 +253,27 @@ static inline float decompress_coord(uint16_t value, float min_val,
 }
 
 /* ==============================================================================
- * Area IMPLEMENTATION
+ * ARENA IMPLEMENTATION
  * ==============================================================================
  */
 
 static inline Arena arena_init(void *buffer, size_t capacity) {
-  return (arena){.buffer = (uint8_t *)buffer, .capacity = capacity, .offset = 0}
+  return (Arena){.buffer = (uint8_t *)buffer, .capacity = capacity, .offset = 0};
 }
 
-static inline void *arena_alloc(Arana *arena, size_t size) {
-  // This is for 8bit alinement, I might change this to enbled in the future.
-  size_t aligned_size =
-      (size + 7) & ~7 if (arena->offset + aligned_size > area->capacity) {
-    arena->offset += aligned_size;
-    return ptr;
+static inline void *arena_alloc(Arena *arena, size_t size) {
+  // 8-byte alignment
+  size_t aligned_size = (size + 7) & ~7;
+  if (arena->offset + aligned_size > arena->capacity) {
+    return NULL;
   }
+  void *ptr = &arena->buffer[arena->offset];
+  arena->offset += aligned_size;
+  return ptr;
 }
 
-static inline void arena_reset(Arena *arena) { arena_offset = 0; }
+static inline void arena_reset(Arena *arena) { 
+  arena->offset = 0; 
+}
 
 #endif // FLUSHTOOLS_H
